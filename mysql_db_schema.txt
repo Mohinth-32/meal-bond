@@ -1,0 +1,106 @@
+CREATE TABLE users (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(100) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE foods (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  usda_fdc_id BIGINT NOT NULL UNIQUE,
+  usda_data_type ENUM(
+    'Foundation',
+    'SR Legacy',
+    'Survey (FNDDS)',
+    'Branded'
+  ) NOT NULL,
+  last_synced_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE nutrients (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  unit VARCHAR(20) NOT NULL,              -- g, mg, kcal, µg
+  category VARCHAR(50) NOT NULL,           -- e.g. Macronutrient, Vitamin, Mineral
+  usda_nutrient_number VARCHAR(10) NULL,   -- USDA nutrient ID
+  is_visible TINYINT(1) DEFAULT 1,          -- 1 = show to user, 0 = hidden
+  sort_order INT DEFAULT 999,               -- display ordering
+  UNIQUE KEY uq_nutrient_name_unit (name, unit),
+  INDEX idx_nutrient_name (name),
+  INDEX idx_nutrient_category (category)
+);
+
+
+CREATE TABLE food_nutrients (
+  food_id BIGINT NOT NULL,
+  nutrient_id BIGINT NOT NULL,
+  amount_per_100g DECIMAL(10,4) NOT NULL,
+
+  PRIMARY KEY (food_id, nutrient_id),
+
+  CONSTRAINT fk_fn_food
+    FOREIGN KEY (food_id) REFERENCES foods(id)
+    ON DELETE CASCADE,
+
+  CONSTRAINT fk_fn_nutrient
+    FOREIGN KEY (nutrient_id) REFERENCES nutrients(id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE meals (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_meal_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE meal_items (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  meal_id BIGINT NOT NULL,
+  food_id BIGINT NOT NULL,
+  multiplier DECIMAL(6,3) NOT NULL,  -- quantity_g / 100
+
+  CONSTRAINT fk_mi_meal
+    FOREIGN KEY (meal_id) REFERENCES meals(id)
+    ON DELETE CASCADE,
+
+  CONSTRAINT fk_mi_food
+    FOREIGN KEY (food_id) REFERENCES foods(id)
+    ON DELETE RESTRICT
+);
+
+CREATE TABLE meal_text (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  meal_id BIGINT NOT NULL,
+  text TEXT NOT NULL,
+
+  CONSTRAINT fk_mt_meal
+    FOREIGN KEY (meal_id) REFERENCES meals(id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE user_nutrients (
+  user_id BIGINT NOT NULL,
+  nutrient_id BIGINT NOT NULL,
+
+  PRIMARY KEY (user_id, nutrient_id),
+
+  CONSTRAINT fk_un_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE,
+
+  CONSTRAINT fk_un_nutrient
+    FOREIGN KEY (nutrient_id) REFERENCES nutrients(id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX idx_foods_fdc ON foods(usda_fdc_id);
+CREATE INDEX idx_fn_food ON food_nutrients(food_id);
+CREATE INDEX idx_fn_nutrient ON food_nutrients(nutrient_id);
+CREATE INDEX idx_meals_user ON meals(user_id);
+CREATE INDEX idx_mi_meal ON meal_items(meal_id);
