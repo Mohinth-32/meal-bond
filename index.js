@@ -9,7 +9,7 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
-
+app.use(express.urlencoded({ extended: true }));
 // ✅ MySQL Database Connection (FIXED)
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -76,59 +76,96 @@ async function searchFoods(searchParams) {
 }
 
 // Route to search foods
-app.post('/search-foods', async (req, res) => {
-  try {
-    const searchParams = req.body;
-    const result = await searchFoods(searchParams);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Route to check if foods exist in database
 app.post('/giveas-items', async (req, res) => {
   try {
-    const { foods } = req.body;
+    let rawBody = req.body;
 
-    if (!foods || !Array.isArray(foods) || foods.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'foods array is required' });
+    // 1️⃣ If body is a string (n8n streaming mode)
+    if (typeof rawBody === 'string') {
+      try {
+        rawBody = JSON.parse(rawBody);
+        console.log('Parsed raw body from string:', rawBody);
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          error: 'Request body is not valid JSON',
+        });
+      }
     }
 
+    // 2️⃣ n8n wraps payload inside "body"
+    const payload = rawBody.body ?? rawBody;
+
+    const resumeUrlReceived = payload['resume-url'];
+    if (resumeUrlReceived) {
+      resumeUrl = resumeUrlReceived;
+      console.log('Stored resume URL:');
+    }
+
+    // 3️⃣ Parse data field
+    let foods;
+
+    if (typeof payload.data === 'string') {
+      try {
+        const parsedData = JSON.parse(payload.data.trim());
+        foods = parsedData.foods;
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid JSON inside data field',
+        });
+      }
+    } else if (payload.data?.foods) {
+      foods = payload.data.foods;
+    }
+
+    console.log('FINAL foods value:', foods);
+
+    // 4️⃣ Validate
+    if (!Array.isArray(foods) || foods.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'foods array is required',
+      });
+    }
+
+    // 5️⃣ DB logic
     const foodNames = foods.map((f) => f.name);
 
-    // Query to find which foods exist in the database
     const [rows] = await pool.query(
       'SELECT name FROM foods WHERE name IN (?)',
       [foodNames]
     );
 
-    const foundFoods = rows.map((row) => row.name.toLowerCase());
+    const foundFoods = rows.map((r) => r.name.toLowerCase());
+
+    const availableFoods = foods.filter((f) =>
+      foundFoods.includes(f.name.toLowerCase())
+    );
+
     const missingFoods = foodNames.filter(
       (name) => !foundFoods.includes(name.toLowerCase())
     );
-    const availableFoods = foods.filter((food) =>
-      foundFoods.includes(food.name.toLowerCase())
-    );
 
-    if (missingFoods.length === 0) {
-      return res.json({
-        success: true,
-        message: 'All foods are available',
-        'available-foods': availableFoods,
-      });
-    } else {
-      return res.json({
-        'missing-foods': missingFoods,
-        'available-foods': availableFoods,
-      });
-    }
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    return res.status(200).json({
+      success: true,
+      message: 'Foods processed',
+      data: {
+        availableFoods,
+        missingFoods,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
+
+// Store resume URL for later use
+let resumeUrl = null;
 
 export { searchFoods };
 
