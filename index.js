@@ -146,7 +146,7 @@ app.post('/giveas-items', async (req, res) => {
     const missingFoods = foodNames.filter(
       (name) => !foundFoods.includes(name.toLowerCase())
     );
-
+    itemsData = { availableFoods, missingFoods };
     return res.status(200).json({
       success: true,
       message: 'Foods processed',
@@ -166,6 +166,47 @@ app.post('/giveas-items', async (req, res) => {
 
 // Store resume URL for later use
 let resumeUrl = null;
+let itemsData = null;
+
+// Route to resume n8n workflow with itemsData
+app.post('/resume', async (req, res) => {
+  try {
+    if (!resumeUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'No resume URL stored. Call /giveas-items first.',
+      });
+    }
+
+    if (!itemsData) {
+      return res.status(400).json({
+        success: false,
+        error: 'No items data available. Call /giveas-items first.',
+      });
+    }
+
+    console.log('Sending to resume URL:', resumeUrl);
+    console.log('Items data:', itemsData);
+
+    const response = await axios.post(resumeUrl, itemsData, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Resume request sent successfully',
+      response: response.data,
+    });
+  } catch (error) {
+    console.error('Error sending resume request:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
 
 export { searchFoods };
 
